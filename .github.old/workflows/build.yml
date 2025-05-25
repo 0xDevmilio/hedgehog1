@@ -1,0 +1,125 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          node-version: "20"
+
+      - name: Install Bun on macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo 'export BUN_INSTALL="$HOME/.bun"' >> $HOME/.bash_profile
+          echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> $HOME/.bash_profile
+          source $HOME/.bash_profile
+
+      - name: Install Bun on Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo 'export BUN_INSTALL="$HOME/.bun"' >> $HOME/.bashrc
+          echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> $HOME/.bashrc
+          source $HOME/.bashrc
+
+      - name: Install Bun on Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo 'export BUN_INSTALL="$HOME/.bun"' >> $HOME/.bashrc
+          echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> $HOME/.bashrc
+          source $HOME/.bashrc
+
+      - name: Build for ${{ matrix.os }}
+        run: |
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            bun build --compile --minify --sourcemap --target=bun-darwin-arm64 ./src/terminal/index.ts --outfile ./build/HedgeHogMac
+          elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            bun build --compile --minify --sourcemap --target=bun-windows-x64-modern ./src/terminal/index.ts --outfile ./build/HedgeHogWin
+          elif [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            bun build --compile --minify --sourcemap --target=bun-linux-x64-modern ./src/terminal/index.ts --outfile ./build/HedgeHogLinux
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-build
+          path: ./build
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          node-version: "20"
+
+      - name: Download build artifacts (macOS)
+        uses: actions/download-artifact@v3
+        with:
+          name: macos-latest-build
+          path: ./build/macos
+
+      - name: Download build artifacts (Windows)
+        uses: actions/download-artifact@v3
+        with:
+          name: windows-latest-build
+          path: ./build/windows
+
+      - name: Download build artifacts (Linux)
+        uses: actions/download-artifact@v3
+        with:
+          name: ubuntu-latest-build
+          path: ./build/linux
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v1.0.0
+          release_name: Release v1.0.0
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset (macOS)
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build/macos/HedgeHogMac
+          asset_name: HedgeHogMac
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset (Windows)
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build/windows/HedgeHogWin
+          asset_name: HedgeHogWin
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset (Linux)
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build/linux/HedgeHogLinux
+          asset_name: HedgeHogLinux
+          asset_content_type: application/octet-stream
